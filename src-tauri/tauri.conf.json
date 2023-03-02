@@ -1,14 +1,17 @@
 {
   "package": {
-    "productName": "WeRead",
+    "productName": "Bing",
     "version": "1.0.0"
   },
   "tauri": {
+    "allowlist": {
+      "all": true
+    },
     "windows": [
       {
-        "url": "https://weread.qq.com/",
+        "url": "https://www.bing.com/",
         "transparent": true,
-        "fullscreen": false,
+        "fullscreen": true,
         "width": 1200,
         "height": 780,
         "resizable": true

@@ -10,6 +10,7 @@ use wry::{
         window::{Fullscreen, Window, WindowBuilder},
     },
     webview::WebViewBuilder,
+    http::{HeaderMap, HeaderValue},
 };
 
 #[cfg(target_os = "macos")]
@@ -28,6 +29,10 @@ use wry::webview::WebContext;
 
 use dirs::download_dir;
 use std::path::PathBuf;
+use webview2_com_sys::Microsoft::Web::WebView2::Win32::{ICoreWebView2, ICoreWebView2_2};
+use windows::core::{HSTRING, InParam, Interface, PCWSTR};
+use windows::Win32::System::WinRT::EventRegistrationToken;
+use wry::webview::WebviewExtWindows;
 
 enum UserEvent {
     DownloadStarted(String, String),
@@ -200,10 +205,13 @@ fn main() -> wry::Result<()> {
         let user_agent_string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36";
         #[cfg(target_os = "linux")]
         let user_agent_string = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36";
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Forwarded-For", HeaderValue::from_static("8.8.8.8"));
         WebViewBuilder::new(window)?
             .with_user_agent(user_agent_string)
             .with_url(&url.to_string())?
-            .with_devtools(cfg!(feature = "devtools"))
+            .with_url_and_headers(&url.to_string(),headers)?
+            // .with_devtools(cfg!(feature = "devtools"))
             .with_initialization_script(include_str!("pake.js"))
             .with_ipc_handler(handler)
             .with_web_context(&mut web_content)
@@ -211,9 +219,32 @@ fn main() -> wry::Result<()> {
             .with_download_completed_handler(download_completed)
             .build()?
     };
+    // headers.append("X-Forwarded-For", HeaderValue::from_static("8.8.8.8"));
+    // webview.load_url_with_headers();
     #[cfg(feature = "devtools")]
     {
         webview.open_devtools();
+    }
+
+    let core_2:ICoreWebView2 = 
+        unsafe {
+            webview // `webview` is the arg you get in tauri's window.with_webview method.
+                .controller()
+                .CoreWebView2()
+        }
+        .unwrap();
+    let core_2 = core_2
+        .cast::<ICoreWebView2_2>()
+        .unwrap();
+    unsafe {
+        core_2.add_WebResourceRequested(move |_sender, args| {
+            let request = args.Request().unwrap();
+            // let uri = request.Uri();
+            let headers = request.Headers().unwrap();
+            let name: dyn Into<InParam<PCWSTR>> = Into::<dyn Into<InParam<PCWSTR>>>::into(PCWSTR(HSTRING::from("X-Forwarded-For").as_wide().as_ptr()));
+            let value: dyn Into<InParam<PCWSTR>> = Into::<dyn Into<InParam<PCWSTR>>>::into(PCWSTR(HSTRING::from("8.8.8.8").as_wide().as_ptr()));
+            headers.setHeader(name, value);
+        }, &mut EventRegistrationToken::default()).expect("TODO: panic message");
     }
 
     event_loop.run(move |event, _, control_flow| {
